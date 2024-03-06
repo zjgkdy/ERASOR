@@ -14,27 +14,27 @@ def rotx(t):
     """Rotation about the x-axis."""
     c = np.cos(t)
     s = np.sin(t)
-    return np.array([[1,  0,  0],
-                     [0,  c, -s],
-                     [0,  s,  c]])
+    return np.array([[1, 0, 0],
+                     [0, c, -s],
+                     [0, s, c]])
 
 
 def roty(t):
     """Rotation about the y-axis."""
     c = np.cos(t)
     s = np.sin(t)
-    return np.array([[c,  0,  s],
-                     [0,  1,  0],
-                     [-s, 0,  c]])
+    return np.array([[c, 0, s],
+                     [0, 1, 0],
+                     [-s, 0, c]])
 
 
 def rotz(t):
     """Rotation about the z-axis."""
     c = np.cos(t)
     s = np.sin(t)
-    return np.array([[c, -s,  0],
-                     [s,  c,  0],
-                     [0,  0,  1]])
+    return np.array([[c, -s, 0],
+                     [s, c, 0],
+                     [0, 0, 1]])
 
 
 def transform_from_rot_trans(R, t):
@@ -97,7 +97,10 @@ def load_velo_scans(velo_files):
         scan_list.append(scan.reshape((-1, 4)))
 
     return scan_list
+
+
 import csv
+
 
 def load_labels(label_files):
     """Helper method to parse velodyne binary files into a list of label."""
@@ -112,7 +115,7 @@ def load_labels(label_files):
         # with open("/media/shapelim/UX960NVMe1/kitti_semantic/dataset/debug_python/" + str(i)+".csv", "w") as csvfile:
         #     wr = csv.writer(csvfile)
         #     semantic_label = pc_label & 0xFFFF
-        #     inst_label = pc_label >> 16
+        #     inst_label = pc_label >>label_files 16
         #     for j in range(semantic_label.shape[0]):
         #         wr.writerow([semantic_label[j], inst_label[j]])
         # # # # # # # # # # # # #
