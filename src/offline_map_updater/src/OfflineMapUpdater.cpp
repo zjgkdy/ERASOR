@@ -16,8 +16,8 @@ OfflineMapUpdater::OfflineMapUpdater()
     pub_debug_pc2_curr_ = nh.advertise<sensor_msgs::PointCloud2>("/MapUpdater/pc2_curr", 100);
 
     pub_debug_map_ = nh.advertise<sensor_msgs::PointCloud2>("/MapUpdater/debug/map", 100);
-    pub_debug_query_egocentric_ = nh.advertise<sensor_msgs::PointCloud2>("/MapUpdater/debug/pc_curr_body", 100);
-    pub_debug_map_egocentric_ = nh.advertise<sensor_msgs::PointCloud2>("/MapUpdater/debug/map_body", 100);
+    pub_debug_query_egocentric_ = nh.advertise<sensor_msgs::PointCloud2>("/MapUpdater/debug/pc_curr_body", 100); // 查询帧VOI区域
+    pub_debug_map_egocentric_ = nh.advertise<sensor_msgs::PointCloud2>("/MapUpdater/debug/map_body", 100);       // 地图VOI区域
     pub_debug_map_arranged_init_ = nh.advertise<sensor_msgs::PointCloud2>("/MapUpdater/debug/map_init_arranged", 100);
 
     pub_dynamic_arranged_ = nh.advertise<sensor_msgs::PointCloud2>("/MapUpdater/dynamic", 100);
@@ -223,7 +223,7 @@ void OfflineMapUpdater::save_static_map(float voxel_size)
  */
 void OfflineMapUpdater::callback_node(const erasor::node::ConstPtr &msg)
 {
-    signal(SIGINT, erasor_utils::signal_callback_handler); // 中断信号(Ctrl + C)处理函数
+    // signal(SIGINT, erasor_utils::signal_callback_handler); // 中断信号(Ctrl + C)处理函数
 
     static int stack_count = 0;
     stack_count++;
@@ -285,14 +285,16 @@ void OfflineMapUpdater::callback_node(const erasor::node::ConstPtr &msg)
 
         ROS_INFO_STREAM("\033[1;32m" << setw(22) << "Extracting VoI takes " << end_voi - start_voi << "s\033[0m");
 
-        pub_debug_map_egocentric_.publish(erasor_utils::cloud2msg(*map_voi_));
-        pub_debug_query_egocentric_.publish(erasor_utils::cloud2msg(*query_voi_));
+        pub_debug_map_egocentric_.publish(erasor_utils::cloud2msg(*map_voi_, "camera_left"));     // 发布地图VOI区域
+        pub_debug_query_egocentric_.publish(erasor_utils::cloud2msg(*query_voi_, "camera_left")); // 发布查询帧VOI区域
 
         /**< 3. Conduct Scan Ratio Test & set map_static_estimate and map_egocentric_complement
          * Note that inputs should be previously transformed into egocentric frame */
         auto start = ros::Time::now().toSec();
 
+        // 从VOI点云计算伪占用率描述子
         erasor_->set_inputs(*map_voi_, *query_voi_);
+
         if (erasor_version_ == 2)
         {
             erasor_->compare_vois_and_revert_ground(msg->header.seq);
@@ -312,16 +314,17 @@ void OfflineMapUpdater::callback_node(const erasor::node::ConstPtr &msg)
 
         ROS_INFO_STREAM("\033[1;32m" << setw(22) << "ERASOR takes " << middle - start << "s\033[0m");
 
-        *map_filtered_ = *map_static_estimate_ + *map_egocentric_complement_;
+        *map_filtered_ = *map_static_estimate_ + *map_egocentric_complement_; // 过滤地图云 = 区域内估计的静态点 + R_POD区域外的互补点云
 
         /*** Get currently rejected pts */
-        erasor_->get_outliers(*map_rejected_, *query_rejected_);
+        erasor_->get_outliers(*map_rejected_, *query_rejected_); // 获取拒绝的地图动态点云
 
+        // body系 -> map系
         body2origin(*map_filtered_, *map_filtered_);
         body2origin(*map_rejected_, *map_rejected_);
         body2origin(*query_rejected_, *query_rejected_);
 
-        *map_arranged_ = *map_filtered_ + *map_outskirts_;
+        *map_arranged_ = *map_filtered_ + *map_outskirts_; // 子地图 = 过滤地图云 + VOI区域外互补点云
 
         auto end = ros::Time::now().toSec();
 
@@ -350,10 +353,10 @@ void OfflineMapUpdater::callback_node(const erasor::node::ConstPtr &msg)
 
         print_status();
 
-        publish(*ptr_query_viz, pub_debug_pc2_curr_);
-        publish(*static_objs_to_viz_, pub_static_arranged_);
-        publish(*dynamic_objs_to_viz_, pub_dynamic_arranged_);
-        publish(*map_rejected_, pub_map_rejected_);
+        publish(*ptr_query_viz, pub_debug_pc2_curr_);          // map系下的当前查询点云
+        publish(*static_objs_to_viz_, pub_static_arranged_);   // 子地图中的动态点
+        publish(*dynamic_objs_to_viz_, pub_dynamic_arranged_); // 子地图中的静态点
+        publish(*map_rejected_, pub_map_rejected_);            // 当前帧拒绝的动态点
         publish(*query_rejected_, pub_curr_rejected_);
 
         if (!is_large_scale_)
@@ -411,13 +414,13 @@ void OfflineMapUpdater::reassign_submap(double pose_x, double pose_y)
 }
 
 /**
- * @brief 提取全局地图中的VOI区域
+ * @brief 设置子地图
  *
  * @param map_global 全局地图
  * @param submap 待提取的子地图
  * @param submap_complement 子地图的互补地图
- * @param x 机器人实时body x 坐标
- * @param y 机器上实时body y 坐标
+ * @param x 机器人body实时x坐标
+ * @param y 机器上body实时y坐标
  * @param submap_size 子地图尺寸
  */
 void OfflineMapUpdater::set_submap(const pcl::PointCloud<pcl::PointXYZI> &map_global, pcl::PointCloud<pcl::PointXYZI> &submap,
@@ -444,10 +447,19 @@ void OfflineMapUpdater::set_submap(const pcl::PointCloud<pcl::PointXYZI> &map_gl
     }
 }
 
+/**
+ * @brief 地图子地图云中的VOI，变换到body系下
+ *
+ * @param x_criterion   机器人body实时x坐标
+ * @param y_criterion   机器上body实时y坐标
+ * @param dst           VOI点云
+ * @param outskirts     不感兴趣点云
+ * @param mode          VOI提取方式
+ */
 void OfflineMapUpdater::fetch_VoI(double x_criterion, double y_criterion, pcl::PointCloud<pcl::PointXYZI> &dst,
                                   pcl::PointCloud<pcl::PointXYZI> &outskirts, std::string mode)
+
 {
-    // 1. Divide map_arranged into map_central and map_outskirts
     static double margin = 0;
     if (!dst.empty())
         dst.clear();
@@ -456,6 +468,7 @@ void OfflineMapUpdater::fetch_VoI(double x_criterion, double y_criterion, pcl::P
     if (!map_voi_wrt_origin_->points.empty())
         map_voi_wrt_origin_->points.clear(); // Inliers are still on the map frame
 
+    // 1. Divide map_arranged into map_central and map_outskirts
     if (mode == "naive")
     {
         double max_dist_square = pow(max_range_ + margin, 2);
@@ -508,18 +521,18 @@ void OfflineMapUpdater::fetch_VoI(double x_criterion, double y_criterion, pcl::P
             }
         }
     }
+
     ROS_INFO_STREAM(map_arranged_->points.size() << "=" << map_voi_wrt_origin_->points.size() + outskirts.points.size() << "| "
                                                  << map_voi_wrt_origin_->points.size() << " + \033[4;32m" << outskirts.points.size()
                                                  << "\033[0m");
 
+    // map系变换到body系
     pcl::PointCloud<pcl::PointXYZI>::Ptr ptr_transformed(new pcl::PointCloud<pcl::PointXYZI>);
     pcl::transformPointCloud(*map_voi_wrt_origin_, *ptr_transformed, tf_body2origin_.inverse());
     dst = *ptr_transformed;
 }
 
-void OfflineMapUpdater::body2origin(
-    const pcl::PointCloud<pcl::PointXYZI> src,
-    pcl::PointCloud<pcl::PointXYZI> &dst)
+void OfflineMapUpdater::body2origin(const pcl::PointCloud<pcl::PointXYZI> src, pcl::PointCloud<pcl::PointXYZI> &dst)
 {
     pcl::PointCloud<pcl::PointXYZI>::Ptr ptr_src(new pcl::PointCloud<pcl::PointXYZI>);
     pcl::PointCloud<pcl::PointXYZI>::Ptr ptr_transformed(new pcl::PointCloud<pcl::PointXYZI>);
@@ -530,20 +543,23 @@ void OfflineMapUpdater::body2origin(
 
 void OfflineMapUpdater::print_status()
 {
+    // VOI点数 = 估计的静态点数 + R_POD区域外的互补点数 - 拒绝动态点数
     ROS_INFO_STREAM("ERASOR Input: \033[1;33m" << map_voi_->points.size() << "\033[0m = ");
     ROS_INFO_STREAM(map_static_estimate_->points.size() << " + " << map_egocentric_complement_->points.size() << " - "
                                                         << map_rejected_->points.size());
     ROS_INFO_STREAM(" = \033[1;33m" << map_static_estimate_->points.size() + map_egocentric_complement_->points.size() -
                                            map_rejected_->points.size()
                                     << "\033[0m");
+
+    // 子地图点数 过滤点数 VOI区域外互补点数
     ROS_INFO_STREAM(map_arranged_->points.size() << " " << map_filtered_->points.size() << " \033[4;32m"
                                                  << map_outskirts_->points.size() << "\033[0m");
 
-    std::cout << "[Debug] Total: " << map_arranged_->points.size() << std::endl;
+    std::cout << "[Debug] Total: " << map_arranged_->points.size() << std::endl; // 子地图点数
     std::cout << "[Debug] " << (double)dynamic_objs_to_viz_->points.size() / num_pcs_init_ * 100 << setw(7) << " % <- "
-              << dynamic_objs_to_viz_->points.size() << " / " << num_pcs_init_ << std::endl;
+              << dynamic_objs_to_viz_->points.size() << " / " << num_pcs_init_ << std::endl; // 子地图中动态点数 / 原始地图点数
     std::cout << "[Debug] " << (double)static_objs_to_viz_->points.size() / num_pcs_init_ * 100 << setw(7) << "% <- "
-              << static_objs_to_viz_->points.size() << " / " << num_pcs_init_ << std::endl;
+              << static_objs_to_viz_->points.size() << " / " << num_pcs_init_ << std::endl; // 子地图中静态点数 / 原始地图点数
 }
 
 /**
@@ -575,9 +591,7 @@ void OfflineMapUpdater::publish(
         ROS_INFO_STREAM("PC2 is Published!");
 }
 
-void OfflineMapUpdater::publish(
-    const pcl::PointCloud<pcl::PointXYZI> &map,
-    const ros::Publisher &publisher)
+void OfflineMapUpdater::publish(const pcl::PointCloud<pcl::PointXYZI> &map, const ros::Publisher &publisher)
 {
     pcl::toROSMsg(map, pc2_map_);
     pc2_map_.header.frame_id = "map";

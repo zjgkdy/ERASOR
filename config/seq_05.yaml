@@ -20,7 +20,7 @@ erasor:
 MapUpdater:
 
     data_name: "05"
-    initial_map_path: "/home/luoteng/erasor_ws/output/05_2350_to_2670_w_interval2_voxel_0.200000.pcd"
+    initial_map_path: "/home/luoteng/erasor_ws/output/05/05_2350_to_2670_w_interval2_voxel_0.200000.pcd"
     env: "outdoor"
     save_path: "/home/luoteng/erasor_ws/output/semantic_KITTI_map/"
     query_voxel_size: 0.2

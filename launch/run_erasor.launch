@@ -7,6 +7,9 @@
 <node name="rviz" pkg="rviz" type="rviz" args="-d $(find erasor)/rviz/erasor_map.rviz"/>
 <node name="rviz_body" pkg="rviz" type="rviz" args="-d $(find erasor)/rviz/srt.rviz"/>
 
+<!-- rviz中的camera_left系其实就是body系 -->
+<!-- <node pkg="tf2_ros" type="static_transform_publisher" name="pub_body" args="0 0 1.73 0 0 0 camera_left body" output="screen" /> -->
+
 <arg name="target_seq" default="5"/>
 <group if="$(eval arg('target_seq') ==0)">
     <rosparam command="load" file="$(find erasor)/config/seq_00.yaml" />

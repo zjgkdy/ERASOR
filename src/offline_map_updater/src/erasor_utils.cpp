@@ -56,9 +56,15 @@ namespace erasor_utils
         return result;
     }
 
-    void parse_dynamic_obj(
-        const pcl::PointCloud<pcl::PointXYZI> &cloudIn, pcl::PointCloud<pcl::PointXYZI> &dynamicOut,
-        pcl::PointCloud<pcl::PointXYZI> &staticOut)
+    /**
+     * @brief 根据语义标签，解析输入点云中的动态点和静态点
+     *
+     * @param cloudIn       输入点云
+     * @param dynamicOut    动态点
+     * @param staticOut     静态点
+     */
+    void parse_dynamic_obj(const pcl::PointCloud<pcl::PointXYZI> &cloudIn,
+                           pcl::PointCloud<pcl::PointXYZI> &dynamicOut, pcl::PointCloud<pcl::PointXYZI> &staticOut)
     {
         dynamicOut.points.clear();
         staticOut.points.clear();
@@ -130,6 +136,13 @@ namespace erasor_utils
         dst = *ptr_reassigned;
     }
 
+    /**
+     * @brief 根据SemanticKITTI的语义标签，统计输入点云中动态点和静态点的数量
+     *
+     * @param cloudIn       输入点云
+     * @param num_static    静态点数
+     * @param num_dynamic   动态点数
+     */
     void count_stat_dyn(const pcl::PointCloud<pcl::PointXYZI> &cloudIn, int &num_static, int &num_dynamic)
     {
         int tmp_static = 0;

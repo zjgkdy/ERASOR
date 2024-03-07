@@ -47,7 +47,7 @@ void callbackSaveFlag(const std_msgs::Float32::ConstPtr &msg)
 
 void callbackData(const node msg)
 {
-    signal(SIGINT, erasor_utils::signal_callback_handler); // 中断信号(Ctrl + C)处理函数
+    // signal(SIGINT, erasor_utils::signal_callback_handler); // 中断信号(Ctrl + C)处理函数
 
     static int cnt = 0;
     if ((cnt % viz_interval) == 0)
