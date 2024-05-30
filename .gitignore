@@ -3,7 +3,7 @@ cmake-build-debug*
 vscode/*
 .idea/*
 .idea/
-vscode/
+.vscode/
 
 .codes/*
 .code/*
